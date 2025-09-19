@@ -1,29 +1,36 @@
-name: CI Pipeline
+name: AI Code Review
 
 on:
   pull_request:
     branches: [ main ]
-  push:
-    branches: [ main ]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
-  build-test-docker:
+  ai-review:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22.19.0'
 
-      - name: Install deps
-        run: npm ci
+      - name: Collect PR diff
+        id: diff
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          git diff --unified=0 origin/${{ github.base_ref }}... > diff.patch
+          # sanitiza e corta pra não estourar tokens
+          head -c 12000 diff.patch > diff.txt
 
-      - name: Run tests
-        run: npm test
-
-      - name: Build Docker image
-        run: docker build -t infra-app .
+      - name: Run AI Review
+        uses: sourcegraph/openai-pr-reviewer@v1
+        with:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          review_comment_lgtm: true
+          language: en
